@@ -380,6 +380,7 @@ export default function QuestionsPage() {
       return;
     }
 
+    hasAutoInitializedRef.current = true;
     setEditingIndex(null);
     pendingSubTopicRestoreRef.current = null;
     reset(defaultFormValues);
@@ -429,6 +430,7 @@ export default function QuestionsPage() {
       if (merged && merged.length >= limit) {
         populateFormFromQuestion(merged[savedIndex], savedIndex);
       } else {
+        hasAutoInitializedRef.current = true;
         setEditingIndex(null);
         pendingSubTopicRestoreRef.current = null;
         reset(defaultFormValues);
