@@ -1,12 +1,13 @@
 import { getSubTopics } from "@/api/subTopics.api";
+import { filterValidUuids } from "@/utils/masterData";
 import { useQuery } from "@tanstack/react-query";
 
 export function useSubTopics(topicIds: string[]) {
+  const validTopicIds = filterValidUuids(topicIds);
+
   return useQuery({
-    queryKey: ["subtopics", topicIds],
-
-    queryFn: () => getSubTopics(topicIds),
-
-    enabled: topicIds.length > 0,
+    queryKey: ["subtopics", validTopicIds],
+    queryFn: () => getSubTopics(validTopicIds),
+    enabled: validTopicIds.length > 0,
   });
 }

@@ -4,7 +4,7 @@ import {
 } from "@/features/tests/test.schema";
 import { zodResolver } from "@hookform/resolvers/zod";
 import clsx from "clsx";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FieldValues, Path, Resolver, UseFormReturn } from "react-hook-form";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import type { MultiValue, SingleValue } from "react-select";
@@ -17,6 +17,7 @@ import { useTopics } from "@/hooks/useTopics";
 import type { SelectOption } from "@/constants/testForm.constants";
 
 import {
+  isUuid,
   resolveSubjectId,
   resolveSubTopicIds,
   resolveTopicIds,
@@ -185,6 +186,7 @@ export default function TestForm({
   const [typeTab, setTypeTab] = useState<TypeTabId>(() =>
     resolveTypeTab(defaultValues?.type)
   );
+  const hasInitializedDefaultsRef = useRef(false);
 
   const {
     register,
@@ -193,7 +195,7 @@ export default function TestForm({
     setValue,
     setError,
     reset,
-    formState: { errors, isValid },
+    formState: { errors, isValid, isDirty },
   } = useForm<TestFormData>({
     resolver: zodResolver(testSchema) as unknown as Resolver<TestFormData>,
     mode: "onChange",
@@ -201,26 +203,36 @@ export default function TestForm({
       mode === "create" && !defaultValues ? CREATE_DEFAULT_VALUES : defaultValues,
   });
 
-  const subject = useWatch({ control, name: "subject" });
-  const topics = useWatch({ control, name: "topics" });
+  const watchedSubject = useWatch({ control, name: "subject" });
+  const watchedTopics = useWatch({ control, name: "topics" });
   const difficulty = useWatch({ control, name: "difficulty" });
 
   const { data: subjects = [], isLoading: subjectsLoading } = useSubjects();
-  const { data: topicsData = [], isLoading: topicsLoading } = useTopics(subject);
 
-  const topicIdsForSubTopics =
-    (topics?.length ?? 0) > 0 ? topics : topicsData.map((t) => t.id);
-
-  const { data: subTopicsData = [], isLoading: subTopicsLoading } = useSubTopics(
-    topicIdsForSubTopics
+  const resolvedSubjectId = useMemo(
+    () => resolveSubjectId(watchedSubject, subjects),
+    [watchedSubject, subjects]
   );
+
+  const subjectIdForApi = isUuid(resolvedSubjectId) ? resolvedSubjectId : "";
+
+  const { data: topicsData = [], isLoading: topicsLoading } = useTopics(subjectIdForApi);
+
+  const resolvedTopicIds = useMemo(
+    () => resolveTopicIds(watchedTopics, topicsData),
+    [watchedTopics, topicsData]
+  );
+
+  const { data: subTopicsData = [], isLoading: subTopicsLoading } =
+    useSubTopics(resolvedTopicIds);
+
+  useEffect(() => {
+    hasInitializedDefaultsRef.current = false;
+  }, [defaultValues]);
 
   useEffect(() => {
     if (!defaultValues || !subjects.length) return;
-
-    const subjectId = resolveSubjectId(defaultValues.subject, subjects);
-    const topicIds = resolveTopicIds(defaultValues.topics, topicsData);
-    const subTopicIds = resolveSubTopicIds(defaultValues.sub_topics, subTopicsData);
+    if (hasInitializedDefaultsRef.current) return;
 
     const needsTopicData =
       (defaultValues.topics?.length ?? 0) > 0 && topicsData.length === 0;
@@ -229,13 +241,24 @@ export default function TestForm({
 
     if (needsTopicData || needsSubTopicData) return;
 
+    if (isDirty) {
+      hasInitializedDefaultsRef.current = true;
+      return;
+    }
+
+    const subjectId = resolveSubjectId(defaultValues.subject, subjects);
+    const topicIds = resolveTopicIds(defaultValues.topics, topicsData);
+    const subTopicIds = resolveSubTopicIds(defaultValues.sub_topics, subTopicsData);
+
     reset({
       ...defaultValues,
       subject: subjectId,
       topics: topicIds,
       sub_topics: subTopicIds,
     });
-  }, [defaultValues, subjects, topicsData, subTopicsData, reset]);
+
+    hasInitializedDefaultsRef.current = true;
+  }, [defaultValues, subjects, topicsData, subTopicsData, reset, isDirty]);
 
   const subjectOptions = useMemo(() => mapToOptions(subjects), [subjects]);
   const topicOptions = useMemo(() => mapToOptions(topicsData), [topicsData]);
@@ -312,7 +335,7 @@ export default function TestForm({
           options={topicOptions}
           placeholder="Choose from Drop-down"
           isMulti
-          isDisabled={!subject}
+          isDisabled={!subjectIdForApi}
           isLoading={topicsLoading}
           error={errors.topics?.message}
           onValueChange={() => {
@@ -328,7 +351,7 @@ export default function TestForm({
           options={subTopicOptions}
           placeholder="Choose from Drop-down"
           isMulti
-          isDisabled={!topics || topics.length === 0}
+          isDisabled={!watchedTopics || watchedTopics.length === 0}
           isLoading={subTopicsLoading}
           error={errors.sub_topics?.message}
         />
@@ -410,7 +433,7 @@ export default function TestForm({
             min={0}
             max={10}
             step={1}
-            placeholder="5"
+            placeholder="0"
             containerClassName={formFieldSpacing}
             labelClassName={formLabelClassName}
             className={formInputClassName}

@@ -1,4 +1,19 @@
 import type { SubTopic, Topic } from "@/types/master";
+import type { Question } from "@/types/question";
+
+const CORRECT_OPTION_KEYS = ["option1", "option2", "option3", "option4"] as const;
+export type CorrectOptionKey = (typeof CORRECT_OPTION_KEYS)[number];
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string): boolean {
+  return UUID_REGEX.test(value);
+}
+
+export function filterValidUuids(ids: string[]): string[] {
+  return ids.filter(isUuid);
+}
 
 export function resolveSubjectId(
   subjectValue: string | undefined,
@@ -46,4 +61,19 @@ export function resolveSubTopicId(
     subTopics.find((st) => st.name === subTopicValue || st.id === subTopicValue)?.id ??
     subTopicValue
   );
+}
+
+export function resolveCorrectOption(
+  correctOption: string | undefined,
+  options: Pick<Question, "option1" | "option2" | "option3" | "option4">
+): CorrectOptionKey {
+  if (
+    correctOption &&
+    CORRECT_OPTION_KEYS.includes(correctOption as CorrectOptionKey)
+  ) {
+    return correctOption as CorrectOptionKey;
+  }
+
+  const match = CORRECT_OPTION_KEYS.find((key) => options[key] === correctOption);
+  return match ?? "option1";
 }

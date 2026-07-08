@@ -11,14 +11,16 @@ export interface Question {
   correct_option: "option1" | "option2" | "option3" | "option4";
   explanation?: string;
   difficulty: "easy" | "medium" | "hard";
+  /** Topic UUID for API submission. */
   topic?: string;
+  /** Sub-topic UUID for API submission. */
   sub_topic?: string;
   paragraph?: string;
   media_url?: string;
   category?: string;
 }
 
-/** Payload shape for POST /questions/bulk (excludes id and audit fields). */
+/** Payload shape for POST /questions/bulk (matches API contract). */
 export interface BulkQuestionCreatePayload {
   test_id: string;
   subject: string;
@@ -31,11 +33,6 @@ export interface BulkQuestionCreatePayload {
   correct_option: "option1" | "option2" | "option3" | "option4";
   explanation: string;
   difficulty: "easy" | "medium" | "hard";
-  topic: string;
-  sub_topic: string;
-  paragraph: string;
-  media_url: string;
-  category: string;
 }
 
 export interface QuestionsBulkPayload {

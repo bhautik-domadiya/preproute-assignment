@@ -22,7 +22,7 @@ import FooterActions from "@/components/questions/FooterActions";
 import type { BulkQuestionCreatePayload, Question } from "@/types/question";
 import type { TestDetail } from "@/types/test";
 import { useSubjects } from "@/hooks/useSubjects";
-import { resolveSubTopicId, resolveTopicId } from "@/utils/masterData";
+import { resolveCorrectOption, resolveSubjectId, resolveSubTopicId, resolveTopicId, resolveTopicIds, resolveSubTopicIds } from "@/utils/masterData";
 import { formatTestType } from "@/utils/format";
 import { getPlainTextFromMarkdown } from "@/utils/richTextEditor";
 
@@ -84,11 +84,9 @@ export default function QuestionsPage() {
   const [localQuestions, setLocalQuestions] = useState<Question[] | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [prevTestId, setPrevTestId] = useState(id);
-  const [subTopicRestoreName, setSubTopicRestoreName] = useState<string | null>(
-    null
-  );
   const [manualLeavePrompt, setManualLeavePrompt] = useState(false);
   const pendingNavigateRef = useRef<(() => void) | null>(null);
+  const pendingSubTopicRestoreRef = useRef<string | null>(null);
   const prevTopicRef = useRef<string>("");
   const hasAutoInitializedRef = useRef(false);
 
@@ -116,9 +114,46 @@ export default function QuestionsPage() {
   }, [subjects, test]);
 
   const { data: topics = [] } = useTopics(subjectId);
-  const { data: formSubTopics = [] } = useSubTopics(
-    selectedTopic ? [selectedTopic] : []
+
+  const testTopicIds = useMemo(
+    () => resolveTopicIds(test?.topics, topics),
+    [test?.topics, topics]
   );
+
+  const questionTopics = useMemo(
+    () =>
+      testTopicIds.length > 0
+        ? topics.filter((topic) => testTopicIds.includes(topic.id))
+        : topics,
+    [topics, testTopicIds]
+  );
+
+  const { data: testScopeSubTopics = [] } = useSubTopics(
+    testTopicIds.length > 0 ? testTopicIds : selectedTopic ? [selectedTopic] : []
+  );
+
+  const testSubTopicIds = useMemo(
+    () => resolveSubTopicIds(test?.sub_topics, testScopeSubTopics),
+    [test?.sub_topics, testScopeSubTopics]
+  );
+
+  const allowedSubTopics = useMemo(
+    () =>
+      testSubTopicIds.length > 0
+        ? testScopeSubTopics.filter((subTopic) => testSubTopicIds.includes(subTopic.id))
+        : testScopeSubTopics,
+    [testScopeSubTopics, testSubTopicIds]
+  );
+
+  const questionSubTopics = useMemo(
+    () =>
+      selectedTopic
+        ? allowedSubTopics.filter((subTopic) => subTopic.topic_id === selectedTopic)
+        : allowedSubTopics,
+    [allowedSubTopics, selectedTopic]
+  );
+
+  const questionsList = localQuestions ?? existingQuestions;
 
   const isPersisting =
     bulkSubmitMutation.isPending || updateTestMutation.isPending;
@@ -129,10 +164,8 @@ export default function QuestionsPage() {
     setPrevTestId(id);
     setLocalQuestions(null);
     setEditingIndex(null);
-    setSubTopicRestoreName(null);
+    pendingSubTopicRestoreRef.current = null;
   }
-
-  const questionsList = localQuestions ?? existingQuestions;
 
   useEffect(() => {
     hasAutoInitializedRef.current = false;
@@ -163,41 +196,31 @@ export default function QuestionsPage() {
   }, [hasUnsavedChanges]);
 
   useEffect(() => {
-    if (!subTopicRestoreName || !formSubTopics.length) return;
+    const pendingSubTopic = pendingSubTopicRestoreRef.current;
+    if (!pendingSubTopic || !questionSubTopics.length) return;
 
-    const subTopicId = resolveSubTopicId(subTopicRestoreName, formSubTopics);
+    const subTopicId = resolveSubTopicId(pendingSubTopic, questionSubTopics);
     if (subTopicId) {
       setValue("sub_topic_id", subTopicId);
     }
-  }, [subTopicRestoreName, formSubTopics, setValue]);
+    pendingSubTopicRestoreRef.current = null;
+  }, [questionSubTopics, setValue]);
 
   const buildBulkCreatePayload = useCallback(
-    (q: Question): BulkQuestionCreatePayload => {
-      const payloadTopic =
-        topics.find((t) => t.id === q.topic || t.name === q.topic)?.name ??
-        q.topic ??
-        "";
-
-      return {
-        test_id: q.test_id || id || "",
-        subject: q.subject || subjectId,
-        type: "mcq",
-        question: q.question,
-        option1: q.option1,
-        option2: q.option2,
-        option3: q.option3,
-        option4: q.option4,
-        correct_option: q.correct_option,
-        explanation: q.explanation ?? "",
-        difficulty: q.difficulty,
-        topic: payloadTopic,
-        sub_topic: q.sub_topic ?? "",
-        paragraph: q.paragraph ?? "",
-        media_url: q.media_url ?? "",
-        category: q.category ?? "",
-      };
-    },
-    [id, subjectId, topics]
+    (q: Question): BulkQuestionCreatePayload => ({
+      test_id: q.test_id || id || "",
+      subject: resolveSubjectId(q.subject ?? test?.subject, subjects) || subjectId,
+      type: "mcq",
+      question: q.question,
+      option1: q.option1,
+      option2: q.option2,
+      option3: q.option3,
+      option4: q.option4,
+      correct_option: resolveCorrectOption(q.correct_option, q),
+      explanation: q.explanation ?? "",
+      difficulty: q.difficulty,
+    }),
+    [id, subjectId, subjects, test?.subject]
   );
 
   const persistQuestions = useCallback(
@@ -242,7 +265,6 @@ export default function QuestionsPage() {
         id,
         payload: {
           questions: savedQuestionIds,
-          total_questions: savedQuestionIds.length,
         },
       });
 
@@ -251,7 +273,6 @@ export default function QuestionsPage() {
           ? {
               ...old,
               questions: savedQuestionIds,
-              total_questions: savedQuestionIds.length,
             }
           : old
       );
@@ -279,7 +300,8 @@ export default function QuestionsPage() {
 
   const populateFormFromQuestion = useCallback(
     (q: Question, index: number) => {
-      const topicId = resolveTopicId(q.topic, topics);
+      const topicId = resolveTopicId(q.topic, questionTopics);
+      const subTopicId = resolveSubTopicId(q.sub_topic, allowedSubTopics);
 
       setEditingIndex(index);
       reset({
@@ -288,21 +310,21 @@ export default function QuestionsPage() {
         option2: q.option2,
         option3: q.option3,
         option4: q.option4,
-        correct_option: q.correct_option,
+        correct_option: resolveCorrectOption(q.correct_option, q),
         explanation: q.explanation || "",
         difficulty: q.difficulty,
         topic_id: topicId,
-        sub_topic_id: "",
+        sub_topic_id: subTopicId,
         media_url: q.media_url || "",
       });
 
-      if (q.sub_topic && topicId) {
-        setSubTopicRestoreName(q.sub_topic);
+      if (q.sub_topic && topicId && !subTopicId) {
+        pendingSubTopicRestoreRef.current = q.sub_topic;
       } else {
-        setSubTopicRestoreName(null);
+        pendingSubTopicRestoreRef.current = null;
       }
     },
-    [reset, topics]
+    [reset, questionTopics, allowedSubTopics]
   );
 
   useEffect(() => {
@@ -359,7 +381,7 @@ export default function QuestionsPage() {
     }
 
     setEditingIndex(null);
-    setSubTopicRestoreName(null);
+    pendingSubTopicRestoreRef.current = null;
     reset(defaultFormValues);
     prevTopicRef.current = "";
   };
@@ -367,13 +389,6 @@ export default function QuestionsPage() {
   const handleAddOrUpdate = async (values: QuestionFormValues) => {
     const currentList = localQuestions ?? existingQuestions;
     const wasEditing = editingIndex !== null;
-
-    const payloadTopic = values.topic_id
-      ? (topics.find((t) => t.id === values.topic_id)?.name ?? "")
-      : "";
-    const payloadSubTopic = values.sub_topic_id
-      ? (formSubTopics.find((st) => st.id === values.sub_topic_id)?.name ?? "")
-      : "";
 
     const newQuestion: Question = {
       test_id: id || "",
@@ -384,11 +399,11 @@ export default function QuestionsPage() {
       option2: values.option2,
       option3: values.option3,
       option4: values.option4,
-      correct_option: values.correct_option,
+      correct_option: resolveCorrectOption(values.correct_option, values),
       explanation: values.explanation || "",
       difficulty: values.difficulty ?? "easy",
-      topic: payloadTopic,
-      sub_topic: payloadSubTopic,
+      topic: values.topic_id ?? "",
+      sub_topic: values.sub_topic_id ?? "",
       paragraph: "",
       media_url: values.media_url || "",
       category: "",
@@ -415,7 +430,7 @@ export default function QuestionsPage() {
         populateFormFromQuestion(merged[savedIndex], savedIndex);
       } else {
         setEditingIndex(null);
-        setSubTopicRestoreName(null);
+        pendingSubTopicRestoreRef.current = null;
         reset(defaultFormValues);
         prevTopicRef.current = "";
       }
@@ -533,8 +548,8 @@ export default function QuestionsPage() {
               register={register}
               control={control}
               errors={errors}
-              topics={topics}
-              subTopics={formSubTopics}
+              topics={questionTopics}
+              subTopics={questionSubTopics}
               selectedTopic={selectedTopic}
               difficulty={difficulty}
               onDifficultyChange={(value) =>

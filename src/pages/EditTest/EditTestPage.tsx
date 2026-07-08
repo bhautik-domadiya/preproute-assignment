@@ -24,10 +24,7 @@ export default function EditTestPage() {
     try {
       await updateMutation.mutateAsync({
         id,
-        payload: {
-          ...values,
-          total_questions: data?.total_questions,
-        },
+        payload: values,
       });
       toast.success("Test updated successfully!");
       navigate("/dashboard");

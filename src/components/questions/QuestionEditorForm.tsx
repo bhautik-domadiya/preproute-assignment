@@ -84,14 +84,14 @@ export default function QuestionEditorForm({
 
         <div className={formFieldSpacing}>
           <label htmlFor="explanation" className={formLabelClassName}>
-            Add Solution
+            Add Explanation (Optional)
           </label>
           <div className="overflow-hidden rounded-lg border border-input">
             <textarea
               id="explanation"
               {...register("explanation")}
               rows={3}
-              placeholder="Add solution here..."
+              placeholder="Type here..."
               className="w-full resize-none border-0 px-4 py-3 text-base text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
             />
           </div>
