@@ -460,7 +460,22 @@ export default function QuestionsPage() {
     toast.success("Question removed");
   };
 
+  const totalQuestionSlots = test?.total_questions ?? questionsList.length;
+  const isAtQuestionLimit = questionsList.length >= totalQuestionSlots;
+  const canContinue = isAtQuestionLimit && !hasUnsavedChanges;
+
   const handleBulkSubmit = async () => {
+    if (questionsList.length < totalQuestionSlots) {
+      toast.error(
+        `Please complete all ${totalQuestionSlots} questions before continuing.`
+      );
+      return;
+    }
+    if (hasUnsavedChanges) {
+      toast.error("Please save the current question before continuing.");
+      return;
+    }
+
     try {
       await persistQuestions(questionsList, { navigateToPreview: true });
     } catch {
@@ -470,8 +485,6 @@ export default function QuestionsPage() {
 
   const onQuestionFormSubmit = handleSubmit(handleAddOrUpdate); // eslint-disable-line react-hooks/refs -- RHF handleSubmit uses internal refs
 
-  const totalQuestionSlots = test?.total_questions ?? questionsList.length;
-  const isAtQuestionLimit = questionsList.length >= totalQuestionSlots;
   const currentQuestionNumber =
     editingIndex !== null
       ? editingIndex + 1
@@ -528,9 +541,11 @@ export default function QuestionsPage() {
         questionCount={questionsList.length}
       />
 
-      {questionsList.length === 0 && (
+      {questionsList.length < totalQuestionSlots && (
         <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          At least one question is required before continuing.
+          {questionsList.length === 0
+            ? "At least one question is required before continuing."
+            : `Complete all questions (${questionsList.length}/${totalQuestionSlots}) before continuing.`}
         </div>
       )}
 
@@ -580,7 +595,7 @@ export default function QuestionsPage() {
       <FooterActions
         onExit={() => requestLeave(() => navigate("/dashboard"))}
         onNext={handleBulkSubmit}
-        nextDisabled={questionsList.length === 0}
+        nextDisabled={!canContinue}
         nextLoading={isPersisting}
       />
 
